@@ -8,6 +8,12 @@ I've been a geography nerd for years and a longtime fan of GeoGuessr, a game whe
 
 However, Google Street View is not open source, so I turned to Mapillary, a crowdsourced street imagery platform with an open API. What began as a fun challenge has evolved into a broader tool: one that can power anything from geographic trivia to academic research or even location-based content tagging.
 
+--Data Collection--
+
+Data is organized by coordinates, and placed into buckets of country.
+-Images within a certain distance (specified in fetch_images.py) are not selected
+-Images with low brightness (specified in fetch_images.py) are not selected
+
 --Project Structure--
 
 geoguessr2/

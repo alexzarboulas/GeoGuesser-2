@@ -2,8 +2,12 @@ import os #File operations
 import requests #HTTP requests to Mapillary API
 import time #To avoid hitting API rate limits
 import csv #For writing metadata
+from PIL import Image 
+from io import BytesIO  
 from geopy.geocoders import Nominatim #Reverse geocoding to get country names
 from geopy.extra.rate_limiter import RateLimiter #To avoid hitting geocoding API rate limits
+from scipy.spatial import KDTree #For fast distance checking between images
+import numpy as np
 
 # Mapillary API access token ->
 ACCESS_TOKEN = "MLY|30161963110055518|c4771e278fd07ec1c609fe91c5c13f4e"
@@ -12,8 +16,11 @@ ACCESS_TOKEN = "MLY|30161963110055518|c4771e278fd07ec1c609fe91c5c13f4e"
 OUTPUT_FOLDER = "../data/raw_images"
 METADATA_PATH = "../data/metadata.csv"
 
-#Defining images per region and bounding boxes (lat long squares)
-IMAGES_PER_REGION = 100
+
+#Configuration: images per region, brightness threshold, distance threshold (between images), and regions with bounding boxes
+IMAGES_PER_REGION = 10
+BRIGHTNESS_THRESHOLD = 40
+DISTANCE_THRESHOLD_DEGREES = 0.0007
 REGIONS = {
 
     "USA": [-122.52, 37.70, -122.36, 37.82],
@@ -25,6 +32,19 @@ REGIONS = {
 #Initialize geocoder with rate limiting, and reverse geocoding function
 geolocator = Nominatim(user_agent="geo_project")
 reverse = RateLimiter(geolocator.reverse, min_delay_seconds=1)
+
+#Brightness helper function
+def is_bright_enough(img):
+    grayscale = img.convert("L")
+    mean_brightness = np.array(grayscale).mean()
+    return mean_brightness > BRIGHTNESS_THRESHOLD
+
+#Distance helper function, using KDTree for fast nearest neighbor search
+def is_far_enough(coord, visited_tree, threshold_rad):
+    if visited_tree is None:
+        return True  # No previous images, so any new image is fine
+    dist, _ = visited_tree.query(coord)  # Find nearest neighbor
+    return dist >= threshold_rad  # Check if distance is above threshold
 
 
 #Main function to query Mapillary API and process, download images
@@ -53,6 +73,9 @@ def fetch_images(region_name, bbox):
     data = response.json().get('data', []) #Parse JSON response
     rows = [] #List to store metadata for each image
 
+    visited_coords = []  # List to store coordinates of visited images
+    visited_tree = None # KDTree for fast distance checking
+
     #Ensure output folder exists
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
@@ -63,13 +86,23 @@ def fetch_images(region_name, bbox):
             img_id = item["id"]
             img_url = item["thumb_2048_url"]
             lon, lat = item["geometry"]["coordinates"]
+            coord = np.radians([lat, lon])  # Convert to radians for KDTree
 
-            #Download image, save to output folder
-            img_data = requests.get(img_url).content
+            #Distance filtering: check if this image is too close to previously saved images
+            if not is_far_enough(coord, visited_tree, np.radians(DISTANCE_THRESHOLD_DEGREES)):
+                print(f"Skipping {img_id} - too close to previous images")
+                continue
+
+            img_resp = requests.get(img_url)  # Download image
+            img = Image.open(BytesIO(img_resp.content)).convert("RGB")
+            if not is_bright_enough(img):  # Check brightness
+                print(f"Skipping {img_id} - not bright enough")
+                continue
+
+            #Save image to disk
             filename = f"{img_id}.jpg"
             filepath = os.path.join(OUTPUT_FOLDER, filename)
-            with open(filepath, "wb") as f:
-                f.write(img_data)
+            img.save(filepath)
 
             #Reverse geocode coordinates to get country
             location = reverse((lat, lon))
@@ -78,6 +111,10 @@ def fetch_images(region_name, bbox):
             #Store metadata for this image
             rows.append([filename, lat, lon, country])
             print(f"{filename} saved ({country})")
+
+            #Add coordinates to visited list and update KDTree
+            visited_coords.append(coord)
+            visited_tree = KDTree(visited_coords) if visited_coords else None
 
         except Exception as e:
             print(f"Failed to process image {item.get('id', 'unknown')}: {e}")
