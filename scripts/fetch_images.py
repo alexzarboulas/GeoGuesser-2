@@ -18,7 +18,7 @@ METADATA_PATH = "../data/metadata.csv"
 
 
 #Configuration: images per region, brightness threshold, distance threshold (between images), and regions with bounding boxes
-IMAGES_PER_REGION = 100
+IMAGES_PER_REGION = 500
 BRIGHTNESS_THRESHOLD = 40
 DISTANCE_THRESHOLD_DEGREES = 0.0007
 REGIONS = {

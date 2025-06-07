@@ -10,8 +10,8 @@ from tqdm import tqdm
 
 #Training configuration
 DATA_DIR = "../data/labeled_images" #Where training data is stored
-BATCH_SIZE = 16 #Number of images processed at once during training
-NUM_EPOCHS = 10 #Number of times to iterate over the entire dataset
+BATCH_SIZE = 32 #Number of images processed at once during training
+NUM_EPOCHS = 20 #Number of times to iterate over the entire dataset
 LEARNING_RATE = 1e-4 #How fast the model updates its weights
 
 #Check GPU else use CPU
