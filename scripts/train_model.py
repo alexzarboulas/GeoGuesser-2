@@ -11,20 +11,24 @@ from tqdm import tqdm
 #Training configuration
 DATA_DIR = "../data/labeled_images" #Where training data is stored
 BATCH_SIZE = 16 #Number of images processed at once during training
-NUM_EPOCHS = 5 #Number of times to iterate over the entire dataset
+NUM_EPOCHS = 10 #Number of times to iterate over the entire dataset
 LEARNING_RATE = 1e-4 #How fast the model updates its weights
 
 #Check GPU else use CPU
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")
 
-#Image transformations to comply with Resnet18
+#Image transformations to comply with Resnet50
 transform = transforms.Compose([
-    transforms.Resize((224, 224)), #ResNet18 expects 224x224 input size
-    transforms.ToTensor(), #Convert PIL images to tensors
-    transforms.Normalize(mean=[0.485, 0.456, 0.406], #ImageNet normalization values
-                         std=[0.229, 0.224, 0.225])
+    transforms.Resize((224, 224)), #ResNet50 expects 224x224 images
+    transforms.RandomHorizontalFlip(), #Data augmentation added
+    transforms.ColorJitter(brightness=0.2, contrast=0.2, saturation=0.2), #Data augmentation added
+    transforms.RandomRotation(10), #Data augmentation added
+    transforms.ToTensor(), #Convert images to PyTorch tensors
+    transforms.Normalize(mean=[0.485, 0.456, 0.406], #ImageNet mean
+                         std=[0.229, 0.224, 0.225]) #ImageNet std
 ])
+
 
 #Load dataset
 #Imagefolder automatically labels based on folder name, which is by country name
@@ -40,8 +44,8 @@ train_set, val_set = random_split(dataset, [train_size, val_size]) #Randomly spl
 train_loader = DataLoader(train_set, batch_size=BATCH_SIZE, shuffle=True)
 val_loader = DataLoader(val_set, batch_size=BATCH_SIZE, shuffle=False)
 
-#ResNet18 model setup
-model = models.resnet18(pretrained=True) #Loads pre-trained ResNet18
+#ResNet50 model setup
+model = models.resnet50(pretrained=True) #Loads pre-trained ResNet50
 model.fc = nn.Linear(model.fc.in_features, num_classes) #Replace final layer to match number of classes
 model = model.to(device) #Moves model to CPU/GPU as appropriate
 
@@ -92,7 +96,7 @@ for epoch in range(NUM_EPOCHS):
     print(f"Validation Accuracy: {val_acc:.2%}")
 
 #Save trained model
-torch.save(model.state_dict(), "../models/geoguessr_resnet18.pth")
-print("Training complete! Model saved to ../models/geoguessr_resnet18.pth")
+torch.save(model.state_dict(), "../models/geoguessr_resnet50.pth")
+print("Training complete! Model saved to ../models/geoguessr_resnet50.pth")
 
     

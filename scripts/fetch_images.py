@@ -18,14 +18,16 @@ METADATA_PATH = "../data/metadata.csv"
 
 
 #Configuration: images per region, brightness threshold, distance threshold (between images), and regions with bounding boxes
-IMAGES_PER_REGION = 10
+IMAGES_PER_REGION = 100
 BRIGHTNESS_THRESHOLD = 40
 DISTANCE_THRESHOLD_DEGREES = 0.0007
 REGIONS = {
 
-    "USA": [-122.52, 37.70, -122.36, 37.82],
+    "USA": [-74.00, 40.70, -73.90, 40.80],
     "Greece" : [22.40, 37.90, 23.70, 38.60],
-    "Japan" : [139.60, 35.40, 140.10, 35.90]
+    "Japan" : [139.60, 35.60, 139.90, 35.80],
+    "Italy" : [12.30, 41.80, 12.70, 42.10],
+    "France" : [2.20, 48.80, 2.50, 49.00]
 
 }
 
@@ -49,77 +51,89 @@ def is_far_enough(coord, visited_tree, threshold_rad):
 
 #Main function to query Mapillary API and process, download images
 def fetch_images(region_name, bbox):
+    lat_min, lon_min, lat_max, lon_max = bbox #Unpack bounding box
+    url = "https://graph.mapillary.com/images" #Mapillary API endpoint
 
-    #Unpack bounding box coordinates
-    lat_min, lon_min, lat_max, lon_max = bbox
-
-    #Construct request to Mapillary API (v4)
-    url = "https://graph.mapillary.com/images"
-    params = {
-        "access_token": ACCESS_TOKEN,
-        "fields": "id,thumb_2048_url,geometry", #get image ID, thumbnail URL, and coordinates
-        "bbox": ",".join(map(str, bbox)),   #define bounding box
-        "limit": IMAGES_PER_REGION
-    }
-
-
-    #Make API request and check response
-    response = requests.get(url, params=params)
-    if response.status_code != 200:
-        print(f"Error fetching images for {region_name}: {response.status_code}")
-        return []
-
-    
-    data = response.json().get('data', []) #Parse JSON response
-    rows = [] #List to store metadata for each image
-
-    visited_coords = []  # List to store coordinates of visited images
-    visited_tree = None # KDTree for fast distance checking
-
-    #Ensure output folder exists
+    all_rows = []
+    visited_coords = []
+    visited_tree = None
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
 
-    #For every image in the API response
-    for item in data:
-        try:
-            #Extract image ID, URL, and coordinates
-            img_id = item["id"]
-            img_url = item["thumb_2048_url"]
-            lon, lat = item["geometry"]["coordinates"]
-            coord = np.radians([lat, lon])  # Convert to radians for KDTree
+    page = 0 #Pagination for API requests
+    images_downloaded = 0 #Count of successfully downloaded images
 
-            #Distance filtering: check if this image is too close to previously saved images
-            if not is_far_enough(coord, visited_tree, np.radians(DISTANCE_THRESHOLD_DEGREES)):
-                print(f"Skipping {img_id} - too close to previous images")
-                continue
+    while images_downloaded < IMAGES_PER_REGION: #Loop until enough images are downloaded
+        params = {
+            "access_token": ACCESS_TOKEN,
+            "fields": "id,thumb_2048_url,geometry",
+            "bbox": ",".join(map(str, bbox)), 
+            "limit": 50,  #Max images per API call
+            "page": page #Pagination parameter
+        }
 
-            img_resp = requests.get(img_url)  # Download image
-            img = Image.open(BytesIO(img_resp.content)).convert("RGB")
-            if not is_bright_enough(img):  # Check brightness
-                print(f"Skipping {img_id} - not bright enough")
-                continue
+        response = requests.get(url, params=params)
+        if response.status_code != 200: #Check for successful response
+            print(f"Error fetching images for {region_name} (page {page}): {response.status_code}")
+            break
 
-            #Save image to disk
-            filename = f"{img_id}.jpg"
-            filepath = os.path.join(OUTPUT_FOLDER, filename)
-            img.save(filepath)
+        data = response.json().get('data', []) #Extract image data
+        if not data: #No more images available
+            print(f"No more images available for {region_name}")
+            break
 
-            #Reverse geocode coordinates to get country
-            location = reverse((lat, lon))
-            country = location.raw["address"].get("country", region_name)
+        for item in data: #Process each image in the response
+            try:
+                #Extract image metadata
+                img_id = item["id"]
+                img_url = item["thumb_2048_url"]
+                lon, lat = item["geometry"]["coordinates"]
+                coord = np.radians([lat, lon])
 
-            #Store metadata for this image
-            rows.append([filename, lat, lon, country])
-            print(f"{filename} saved ({country})")
+                #Check distance from previously downloaded images
+                if not is_far_enough(coord, visited_tree, np.radians(DISTANCE_THRESHOLD_DEGREES)):
+                    continue
 
-            #Add coordinates to visited list and update KDTree
-            visited_coords.append(coord)
-            visited_tree = KDTree(visited_coords) if visited_coords else None
+                #Download and check brightness of the image
+                img_resp = requests.get(img_url)
+                img = Image.open(BytesIO(img_resp.content)).convert("RGB")
+                if not is_bright_enough(img):
+                    continue
 
-        except Exception as e:
-            print(f"Failed to process image {item.get('id', 'unknown')}: {e}")
 
-    return rows
+                #Save image to disk
+                filename = f"{region_name}_{img_id}.jpg"
+                filepath = os.path.join(OUTPUT_FOLDER, filename)
+                img.save(filepath)
+
+
+                #Reverse geocode to get country name
+                location = reverse((lat, lon))
+                country = location.raw["address"].get("country", region_name)
+
+
+                #Store metadata
+                all_rows.append([filename, lat, lon, country])
+                visited_coords.append(coord)
+                visited_tree = KDTree(visited_coords) if visited_coords else None
+
+                #Increment count and print status
+                images_downloaded += 1
+                print(f"{filename} saved ({images_downloaded}/{IMAGES_PER_REGION})")
+
+                #Break if enough images have been downloaded
+                if images_downloaded >= IMAGES_PER_REGION:
+                    break
+
+            except Exception as e:
+                print(f"Failed to process image {item.get('id', 'unknown')}: {e}")
+
+        #Prepare for next page of results
+        page += 1
+        time.sleep(1)
+
+    #Return all collected metadata for this region
+    return all_rows
+
 
 #Main script execution
 if __name__ == "__main__":
