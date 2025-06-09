@@ -18,18 +18,29 @@ METADATA_PATH = "../data/metadata.csv"
 
 
 #Configuration: images per region, brightness threshold, distance threshold (between images), and regions with bounding boxes
-IMAGES_PER_REGION = 500
+IMAGES_PER_REGION = 1000
 BRIGHTNESS_THRESHOLD = 40
 DISTANCE_THRESHOLD_DEGREES = 0.0007
 REGIONS = {
-
-    "USA": [-74.00, 40.70, -73.90, 40.80],
-    "Greece" : [22.40, 37.90, 23.70, 38.60],
-    "Japan" : [139.60, 35.60, 139.90, 35.80],
-    "Italy" : [12.30, 41.80, 12.70, 42.10],
-    "France" : [2.20, 48.80, 2.50, 49.00]
-
+    "USA_West": [-125.0, 32.0, -110.0, 49.0],
+    "USA_Central": [-110.0, 29.0, -90.0, 49.0],
+    "USA_East": [-90.0, 30.0, -66.9, 49.0],
+    "Greece": [19.0, 34.0, 28.5, 41.8],
+    "Japan": [129.0, 31.0, 145.5, 45.5],
+    "Italy": [6.5, 36.5, 18.5, 47.2],
+    "France": [-5.0, 42.0, 8.5, 51.5],
+    "Brazil_North": [-70.0, -5.0, -50.0, 5.0],
+    "Brazil_Central": [-60.0, -15.0, -45.0, -5.0],
+    "Brazil_Southeast": [-48.0, -25.0, -42.0, -20.0],
+    "Australia": [113.0, -44.0, 154.0, -10.0],
+    "Canada_West": [-130.0, 49.0, -110.0, 60.0],
+    "Canada_Central": [-110.0, 49.0, -90.0, 60.0],
+    "Canada_East": [-90.0, 45.0, -60.0, 60.0],
+    "UK": [-10.0, 49.0, 2.0, 61.0],
+    "South Africa": [16.0, -35.0, 33.0, -22.0],
+    "India": [68.0, 6.0, 97.5, 36.5]
 }
+
 
 #Initialize geocoder with rate limiting, and reverse geocoding function
 geolocator = Nominatim(user_agent="geo_project")
@@ -67,7 +78,7 @@ def fetch_images(region_name, bbox):
             "access_token": ACCESS_TOKEN,
             "fields": "id,thumb_2048_url,geometry",
             "bbox": ",".join(map(str, bbox)), 
-            "limit": 50,  #Max images per API call
+            "limit": 1000,  #Max images per API call
             "page": page #Pagination parameter
         }
 
@@ -107,9 +118,11 @@ def fetch_images(region_name, bbox):
 
 
                 #Reverse geocode to get country name
-                location = reverse((lat, lon))
-                country = location.raw["address"].get("country", region_name)
+                #location = reverse((lat, lon))
+                #country = location.raw["address"].get("country", region_name)
 
+                #Without reverse geocoding, much faster
+                country = region_name
 
                 #Store metadata
                 all_rows.append([filename, lat, lon, country])
@@ -129,7 +142,7 @@ def fetch_images(region_name, bbox):
 
         #Prepare for next page of results
         page += 1
-        time.sleep(1)
+        time.sleep(0.1)
 
     #Return all collected metadata for this region
     return all_rows
